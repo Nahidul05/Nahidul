@@ -1,20 +1,31 @@
 # Mood Reader
 
-A small web page that reads your text out loud with an emotion.
+A web page that reads your text out loud with an emotion, using a real human-sounding voice.
 
-1. Open `index.html` in Chrome, Edge or Safari (double-click it, or host it with GitHub Pages).
-2. Type or paste your text.
+## How to use
+
+1. Open `index.html` in Chrome, Edge or Safari (or host it with GitHub Pages, see below).
+2. Type or paste your text. Put `*stars*` around a word to stress it.
 3. Pick a mood: Neutral, Happy, Excited, Sad, Angry, Calm, Scared, Surprised or Secretive.
-4. Press **Read**.
+4. Pick a voice type, paste your API key, and press **Read**.
+5. When it finishes, press **Save MP3** to keep the recording.
 
-Each mood sets the pitch, speed, loudness and pauses between phrases, and adds a little
-natural variation per phrase. You can fine-tune the sliders and choose any voice installed
-on your device. It uses the browser's built-in speech (Web Speech API), so there's nothing
-to install and no account or API key needed.
+## Voice types
 
-## Tips for a more human sound
+| Voice type | Sounds | Cost | Key |
+|---|---|---|---|
+| Human voice · OpenAI | Natural, acts out the mood from a written direction | about $0.015 per minute | [platform.openai.com/api-keys](https://platform.openai.com/api-keys) |
+| Human voice · ElevenLabs | Most lifelike, uses mood tags like `[sad]` | free plan, then paid | [elevenlabs.io → Settings → API keys](https://elevenlabs.io/app/settings/api-keys) |
+| Device voice | Robotic, built into your browser | free | none |
 
-- Pick a voice marked ★ (Edge "Natural" voices, Chrome "Google" voices, Safari "Enhanced/Premium"
-  voices). The page picks the most natural one it finds automatically.
-- On iPhone/Mac, download better voices in Settings → Accessibility → Spoken Content → Voices.
-- Put `*stars*` around a word to stress it.
+Use **Extra direction** to steer the voice further, for example "like a bedtime story" or
+"British accent" (works best with OpenAI).
+
+Your API key is saved only in your own browser (local storage) and is sent only to the voice
+service you picked. Don't use it on a shared computer.
+
+## Open it on your phone (GitHub Pages)
+
+1. On GitHub, go to this repository → **Settings** → **Pages**.
+2. Under **Branch**, choose the branch with `index.html` and the `/ (root)` folder, then **Save**.
+3. After a minute, GitHub shows a link like `https://<your-name>.github.io/<repo>/`. Open it on any device.

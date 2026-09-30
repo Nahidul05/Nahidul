@@ -33,6 +33,7 @@
   --line: #2d3040; --accent: #8e9cff; --mood-soft: #262a40; color-scheme: dark;
 }
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 body { background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 1rem; line-height: 1.5; }
 .wrap { max-width: 46rem; margin: 0 auto; padding-inline: 16px; padding-block: 2rem 3rem; display: grid; gap: 1.5rem; }
 header { display: grid; gap: .25rem; }
@@ -69,6 +70,15 @@ button.btn:disabled { opacity: .45; cursor: not-allowed; }
 .status { color: var(--muted); font-size: .9rem; margin-left: auto; min-width: 0; }
 .link { background: none; border: 0; padding: 0; color: var(--accent); font: inherit; font-size: .9rem; cursor: pointer; text-decoration: underline; }
 .warn { color: #b3261e; }
+.engines { display: grid; grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); gap: .5rem; }
+.engine { display: grid; grid-template-columns: auto 1fr; column-gap: .5rem; align-items: start; padding: .7rem .8rem; border: 1px solid var(--line); border-radius: 10px; cursor: pointer; }
+.engine input { margin-top: .3rem; accent-color: var(--mood); grid-row: span 2; }
+.engine small { color: var(--muted); font-size: .8rem; }
+.engine:has(input:checked) { border-color: var(--mood); box-shadow: inset 0 0 0 1px var(--mood); }
+.ai { display: grid; gap: .75rem; }
+input[type=password], input[type=text] { width: 100%; padding: .5rem; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); font: inherit; }
+.hint { color: var(--muted); font-size: .8rem; }
+.hint a { color: var(--accent); }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 </style>
 </head>
@@ -78,7 +88,7 @@ button.btn:disabled { opacity: .45; cursor: not-allowed; }
   <header>
     <span class="label">Text to speech</span>
     <h1>Read it out <em id="moodWord">happy</em>.</h1>
-    <p class="lede">Type or paste anything, pick a mood, and press Read. Each mood changes pitch, speed, loudness and the pauses between phrases. Put *stars* around a word to stress it. Voices marked ★ sound the most natural.</p>
+    <p class="lede">Type or paste anything, pick a mood, and press Read. The human voices act out the mood like a voice actor. Put *stars* around a word to stress it.</p>
   </header>
 
   <section class="panel" aria-label="Your text">
@@ -95,7 +105,31 @@ button.btn:disabled { opacity: .45; cursor: not-allowed; }
     <div class="moods" id="moods"></div>
   </section>
 
-  <section class="panel" aria-label="Voice">
+  <section class="panel" aria-label="Voice type">
+    <span class="label">Voice type</span>
+    <div class="engines" role="radiogroup" aria-label="Voice type">
+      <label class="engine"><input type="radio" name="engine" value="openai"><b>Human voice · OpenAI</b><small>Acts out the mood from a direction. About $0.015 per minute.</small></label>
+      <label class="engine"><input type="radio" name="engine" value="eleven"><b>Human voice · ElevenLabs</b><small>Most lifelike. Free tier, then paid plans.</small></label>
+      <label class="engine"><input type="radio" name="engine" value="device"><b>Device voice</b><small>Free and offline, but sounds robotic.</small></label>
+    </div>
+    <div class="ai" id="aiBox">
+      <div class="dial">
+        <label for="apiKey" class="label" id="keyLabel">API key</label>
+        <input type="password" id="apiKey" autocomplete="off" spellcheck="false" placeholder="Paste your key">
+        <small class="hint" id="keyHint"></small>
+      </div>
+      <div class="dial">
+        <label for="aiVoice" class="label">Voice</label>
+        <select id="aiVoice"></select>
+      </div>
+      <div class="dial">
+        <label for="direction" class="label">Extra direction (optional)</label>
+        <input type="text" id="direction" placeholder="e.g. like a bedtime story, British accent">
+      </div>
+    </div>
+  </section>
+
+  <section class="panel" aria-label="Voice" id="deviceBox">
     <div class="row between">
       <span class="label">Voice &amp; fine-tuning</span>
       <button class="link" id="resetBtn" type="button">Reset to mood</button>
@@ -117,6 +151,7 @@ button.btn:disabled { opacity: .45; cursor: not-allowed; }
       <button class="btn primary" id="playBtn" type="button">▶ Read</button>
       <button class="btn" id="pauseBtn" type="button" disabled>Pause</button>
       <button class="btn" id="stopBtn" type="button" disabled>Stop</button>
+      <button class="btn" id="saveBtn" type="button" hidden>Save MP3</button>
       <span class="status" id="status" role="status">Ready</span>
     </div>
   </div>
@@ -127,16 +162,26 @@ button.btn:disabled { opacity: .45; cursor: not-allowed; }
   // Each mood: base pitch/rate/volume, pause (ms) between phrases,
   // wobble = random pitch/rate variation per phrase, lift = extra pitch on "!" and "?" phrases.
   // Values stay close to 1.0: big pitch/speed jumps are what make browser voices sound robotic.
+  // direct = acting direction for OpenAI, tag = audio tag for ElevenLabs v3.
   const MOODS = {
-    neutral:   { name: "Neutral",   hint: "Plain and even",     color: "#6b7280", pitch: 1.0,  rate: 1.0,  volume: 1.0, pause: 350, wobble: 0.03, lift: 0.08 },
-    happy:     { name: "Happy",     hint: "Bright and warm",    color: "#e0a100", pitch: 1.18, rate: 1.06, volume: 1.0, pause: 300, wobble: 0.06, lift: 0.15 },
-    excited:   { name: "Excited",   hint: "Fast, high, bouncy", color: "#f05a28", pitch: 1.3,  rate: 1.18, volume: 1.0, pause: 180, wobble: 0.1,  lift: 0.2 },
-    sad:       { name: "Sad",       hint: "Low, slow, heavy",   color: "#3f6fb5", pitch: 0.82, rate: 0.84, volume: 0.75,pause: 750, wobble: 0.03, lift: 0 },
-    angry:     { name: "Angry",     hint: "Hard and punchy",    color: "#d0312d", pitch: 0.9,  rate: 1.12, volume: 1.0, pause: 300, wobble: 0.05, lift: 0.05 },
-    calm:      { name: "Calm",      hint: "Soft and steady",    color: "#2f9e7a", pitch: 0.95, rate: 0.88, volume: 0.85,pause: 600, wobble: 0.02, lift: 0.03 },
-    scared:    { name: "Scared",    hint: "Shaky and hurried",  color: "#7b4fc9", pitch: 1.15, rate: 1.12, volume: 0.8, pause: 400, wobble: 0.14, lift: 0.18 },
-    surprised: { name: "Surprised", hint: "Big rises",          color: "#d63384", pitch: 1.22, rate: 1.02, volume: 1.0, pause: 350, wobble: 0.08, lift: 0.3 },
-    whisper:   { name: "Secretive", hint: "Quiet and low",      color: "#4b5563", pitch: 0.9,  rate: 0.9,  volume: 0.45,pause: 500, wobble: 0.02, lift: 0 },
+    neutral:   { name: "Neutral",   hint: "Plain and even",     color: "#6b7280", pitch: 1.0,  rate: 1.0,  volume: 1.0, pause: 350, wobble: 0.03, lift: 0.08, tag: "",
+      direct: "Speak naturally and conversationally, like a person reading to a friend. Even, relaxed tone." },
+    happy:     { name: "Happy",     hint: "Bright and warm",    color: "#e0a100", pitch: 1.18, rate: 1.06, volume: 1.0, pause: 300, wobble: 0.06, lift: 0.15, tag: "[happy]",
+      direct: "Sound genuinely happy and warm, like you're smiling while you talk. Bright, friendly, upbeat." },
+    excited:   { name: "Excited",   hint: "Fast, high, bouncy", color: "#f05a28", pitch: 1.3,  rate: 1.18, volume: 1.0, pause: 180, wobble: 0.1,  lift: 0.2,  tag: "[excited]",
+      direct: "Sound thrilled and full of energy, almost bursting. Quick pace, big rises in pitch, a little laugh in the voice." },
+    sad:       { name: "Sad",       hint: "Low, slow, heavy",   color: "#3f6fb5", pitch: 0.82, rate: 0.84, volume: 0.75,pause: 750, wobble: 0.03, lift: 0,    tag: "[sad]",
+      direct: "Sound sad and heavy-hearted, close to tears. Slow, soft, lower pitch, with long pauses and sighs." },
+    angry:     { name: "Angry",     hint: "Hard and punchy",    color: "#d0312d", pitch: 0.9,  rate: 1.12, volume: 1.0, pause: 300, wobble: 0.05, lift: 0.05, tag: "[angry]",
+      direct: "Sound angry and frustrated. Firm, clipped, forceful words, hitting the key words hard." },
+    calm:      { name: "Calm",      hint: "Soft and steady",    color: "#2f9e7a", pitch: 0.95, rate: 0.88, volume: 0.85,pause: 600, wobble: 0.02, lift: 0.03, tag: "[calmly]",
+      direct: "Sound calm and soothing, like a meditation guide. Slow, gentle, steady, with relaxed pauses." },
+    scared:    { name: "Scared",    hint: "Shaky and hurried",  color: "#7b4fc9", pitch: 1.15, rate: 1.12, volume: 0.8, pause: 400, wobble: 0.14, lift: 0.18, tag: "[nervously]",
+      direct: "Sound scared and anxious. Shaky, breathy voice, hurried words, nervous hesitations." },
+    surprised: { name: "Surprised", hint: "Big rises",          color: "#d63384", pitch: 1.22, rate: 1.02, volume: 1.0, pause: 350, wobble: 0.08, lift: 0.3,  tag: "[surprised]",
+      direct: "Sound amazed and surprised, like you just heard unbelievable news. Big rises in pitch, gasps of disbelief." },
+    whisper:   { name: "Secretive", hint: "Quiet and low",      color: "#4b5563", pitch: 0.9,  rate: 0.9,  volume: 0.45,pause: 500, wobble: 0.02, lift: 0,    tag: "[whispers]",
+      direct: "Whisper, as if sharing a secret you don't want anyone else to hear. Hushed, close, breathy." },
   };
 
   // Names that browsers give their most natural-sounding (neural / premium) voices.
@@ -162,11 +207,6 @@ button.btn:disabled { opacity: .45; cursor: not-allowed; }
     set(k, v) { try { localStorage.setItem(k, v); } catch {} },
   };
 
-  if (!synth) {
-    els.status.textContent = "This browser can't speak text. Try Chrome, Edge or Safari.";
-    els.status.classList.add("warn");
-    els.play.disabled = true;
-  }
 
   // Mood chips
   for (const [key, m] of Object.entries(MOODS)) {
@@ -285,16 +325,195 @@ button.btn:disabled { opacity: .45; cursor: not-allowed; }
     synth.speak(u);
   }
 
+  // ---------- Human (AI) voices ----------
+  const ENGINES = {
+    openai: {
+      keyLabel: "OpenAI API key",
+      hint: 'Create one at <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener">platform.openai.com/api-keys</a> (needs a little credit). It is saved only in this browser.',
+      voices: [["coral","Coral (warm, female)"],["marin","Marin (natural, female)"],["cedar","Cedar (natural, male)"],["nova","Nova (bright, female)"],["shimmer","Shimmer (soft, female)"],["sage","Sage (calm, female)"],["ballad","Ballad (gentle, male)"],["verse","Verse (expressive, male)"],["ash","Ash (clear, male)"],["echo","Echo (deep, male)"],["onyx","Onyx (low, male)"],["fable","Fable (storyteller)"],["alloy","Alloy (neutral)"]],
+    },
+    eleven: {
+      keyLabel: "ElevenLabs API key",
+      hint: 'Create one at <a href="https://elevenlabs.io/app/settings/api-keys" target="_blank" rel="noopener">elevenlabs.io → Settings → API keys</a>. Free plan included. It is saved only in this browser. Your own voices appear here once the key is in.',
+      voices: [["JBFqnCBsd6RMkjVDRZzb","George (warm, male)"],["21m00Tcm4TlvDq8ikWAM","Rachel (calm, female)"],["EXAVITQu4vr4xnSDxMaL","Sarah (soft, female)"],["pNInz6obpgDQGcFmaJgB","Adam (deep, male)"]],
+    },
+  };
+  const ai = { apiKey: $("apiKey"), voice: $("aiVoice"), direction: $("direction"), box: $("aiBox"), deviceBox: $("deviceBox"), save: $("saveBtn") };
+  let engine = "openai", audio = null, endPlay = null, blobs = [];
+
+  function setEngine(e) {
+    engine = ENGINES[e] || e === "device" ? e : "openai";
+    document.querySelectorAll('input[name=engine]').forEach(r => r.checked = r.value === engine);
+    const isAI = engine !== "device";
+    ai.box.hidden = !isAI; ai.deviceBox.hidden = isAI;
+    store.set("moodreader.engine", engine);
+    if (isAI) {
+      $("keyLabel").textContent = ENGINES[engine].keyLabel;
+      $("keyHint").innerHTML = ENGINES[engine].hint;
+      ai.apiKey.value = store.get("moodreader.key." + engine) || "";
+      fillAiVoices(ENGINES[engine].voices);
+      if (engine === "eleven" && ai.apiKey.value) loadElevenVoices();
+    }
+  }
+
+  function fillAiVoices(list) {
+    const saved = store.get("moodreader.aivoice." + engine);
+    ai.voice.innerHTML = "";
+    list.forEach(([id, label]) => { const o = document.createElement("option"); o.value = id; o.textContent = label; ai.voice.appendChild(o); });
+    if (list.some(([id]) => id === saved)) ai.voice.value = saved;
+  }
+
+  async function loadElevenVoices() {
+    try {
+      const r = await fetch("https://api.elevenlabs.io/v1/voices", { headers: { "xi-api-key": ai.apiKey.value.trim() } });
+      if (!r.ok || engine !== "eleven") return;
+      const { voices } = await r.json();
+      if (voices?.length) fillAiVoices(voices.map(v => [v.voice_id, v.name + (v.labels?.gender ? ` (${v.labels.gender})` : "")]));
+    } catch {}
+  }
+
+  document.querySelectorAll('input[name=engine]').forEach(r => r.addEventListener("change", () => { stop(true); setEngine(r.value); }));
+  ai.apiKey.addEventListener("change", () => {
+    store.set("moodreader.key." + engine, ai.apiKey.value.trim());
+    if (engine === "eleven") loadElevenVoices();
+  });
+  ai.voice.addEventListener("change", () => store.set("moodreader.aivoice." + engine, ai.voice.value));
+  ai.direction.addEventListener("change", () => store.set("moodreader.direction", ai.direction.value));
+  ai.direction.value = store.get("moodreader.direction") || "";
+
+  // Group whole sentences into chunks so long text starts playing quickly.
+  function chunks(text, max) {
+    const sentences = text.match(/[^.!?…\n]+[.!?…]*[\s]*|\n+/g) || [];
+    const out = [];
+    let cur = "";
+    for (const s of sentences) {
+      if (cur && (cur + s).length > max) { out.push(cur); cur = ""; }
+      cur += s;
+    }
+    if (cur) out.push(cur);
+    return out;
+  }
+
+  // *word* becomes WORD, which both services read as stressed.
+  const stress = s => s.replace(/\*([^*]+)\*/g, (_, w) => w.toUpperCase());
+
+  async function fetchAudio(part, eleModel = "eleven_v3") {
+    const key = ai.apiKey.value.trim();
+    const m = MOODS[mood];
+    const extra = ai.direction.value.trim();
+    let r;
+    try {
+      if (engine === "openai") {
+        r = await fetch("https://api.openai.com/v1/audio/speech", {
+          method: "POST",
+          headers: { "Authorization": "Bearer " + key, "Content-Type": "application/json" },
+          body: JSON.stringify({
+            model: "gpt-4o-mini-tts", voice: ai.voice.value, input: stress(part).trim(), response_format: "mp3",
+            instructions: `${m.direct}${extra ? " Also: " + extra + "." : ""} Words in capitals are stressed, not shouted.`,
+          }),
+        });
+      } else {
+        const tagged = eleModel === "eleven_v3" && m.tag
+          ? stress(part).trim().replace(/(^|[.!?…]\s+)(?=\S)/g, `$1${m.tag} `)
+          : stress(part).trim();
+        r = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(ai.voice.value)}?output_format=mp3_44100_128`, {
+          method: "POST",
+          headers: { "xi-api-key": key, "Content-Type": "application/json" },
+          body: JSON.stringify({ text: tagged, model_id: eleModel, voice_settings: { stability: 0.5 } }),
+        });
+        // Older accounts may not have the v3 model yet: fall back without the mood tags.
+        if (!r.ok && eleModel === "eleven_v3" && (r.status === 400 || r.status === 422)) return fetchAudio(part, "eleven_multilingual_v2");
+      }
+    } catch {
+      throw new Error("Couldn't reach the voice service. Check your internet. This only works when the page is opened as a file or website, not inside the Claude app.");
+    }
+    if (!r.ok) {
+      let detail = "";
+      try { const j = await r.json(); detail = j.error?.message || j.detail?.message || (typeof j.detail === "string" ? j.detail : ""); } catch {}
+      if (r.status === 401) throw new Error("The API key was rejected. Check it and paste it again.");
+      if (r.status === 429 || r.status === 402) throw new Error("Out of credit or too many requests. " + detail);
+      throw new Error(`The voice service said no (${r.status}). ${detail}`);
+    }
+    return r.blob();
+  }
+
+  // One shared player, unlocked by the Read tap, so phones allow it to play after the download.
+  const player = new Audio();
+  function silentWav() {
+    const b = new DataView(new ArrayBuffer(46));
+    const w = (o, str) => [...str].forEach((c, i) => b.setUint8(o + i, c.charCodeAt(0)));
+    w(0, "RIFF"); b.setUint32(4, 38, true); w(8, "WAVEfmt "); b.setUint32(16, 16, true);
+    b.setUint16(20, 1, true); b.setUint16(22, 1, true); b.setUint32(24, 8000, true); b.setUint32(28, 16000, true);
+    b.setUint16(32, 2, true); b.setUint16(34, 16, true); w(36, "data"); b.setUint32(40, 2, true);
+    return URL.createObjectURL(new Blob([b], { type: "audio/wav" }));
+  }
+  const SILENT = silentWav();
+  function unlockAudio() { player.src = SILENT; player.play().catch(() => {}); }
+
+  function playBlob(blob) {
+    return new Promise((resolve, reject) => {
+      audio = player;
+      player.src = URL.createObjectURL(blob);
+      endPlay = resolve;
+      player.onended = () => resolve();
+      player.onerror = () => resolve();
+      if (!paused) player.play().catch(() => reject(new Error("Your browser blocked the sound. Tap Read again.")));
+    });
+  }
+
+  async function startAI(text, my) {
+    if (!ai.apiKey.value.trim()) {
+      finish("Paste your API key first.", true);
+      ai.apiKey.focus();
+      return;
+    }
+    const parts = chunks(text, 900);
+    renderReading(parts);
+    blobs = [];
+    const spans = els.reading.children;
+    els.status.textContent = "Recording the voice…";
+    let next = fetchAudio(parts[0]);
+    for (let i = 0; i < parts.length; i++) {
+      let blob;
+      try { blob = await next; } catch (e) { if (my === token) finish(e.message, true); return; }
+      if (my !== token) return;
+      if (i + 1 < parts.length) { next = fetchAudio(parts[i + 1]); next.catch(() => {}); }
+      blobs.push(blob);
+      if (i > 0) { spans[i - 1].classList.remove("now"); spans[i - 1].classList.add("done"); }
+      spans[i].classList.add("now");
+      if (!paused) els.status.textContent = `Reading as ${MOODS[mood].name.toLowerCase()}…`;
+      try { await playBlob(blob); } catch (e) { if (my === token) finish(e.message, true); return; }
+      if (my !== token) return;
+      if (i + 1 < parts.length) els.status.textContent = "Recording the next part…";
+    }
+    spans[parts.length - 1]?.classList.remove("now");
+    ai.save.hidden = false;
+    finish("Done");
+  }
+
+  ai.save.addEventListener("click", () => {
+    if (!blobs.length) return;
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob(blobs, { type: "audio/mpeg" }));
+    a.download = `mood-reader-${mood}.mp3`;
+    document.body.appendChild(a); a.click(); a.remove();
+  });
+
+  // ---------- Controls ----------
   function start() {
     const text = els.text.value;
     if (!text.trim()) { els.status.textContent = "Type something to read first."; els.text.focus(); return; }
     stop(true);
     token++;
-    queue = phrases(text);
-    idx = 0; running = true; paused = false;
-    renderReading(queue);
+    running = true; paused = false;
+    ai.save.hidden = true;
     els.text.hidden = true; els.reading.hidden = false;
     setButtons();
+    if (engine !== "device") { unlockAudio(); return startAI(text, token); }
+    if (!synth) return finish("This browser can't speak text. Try Chrome, Edge or Safari.", true);
+    queue = phrases(text);
+    idx = 0;
+    renderReading(queue);
     els.status.textContent = `Reading as ${MOODS[mood].name.toLowerCase()}…`;
     speakNext(token);
   }
@@ -303,23 +522,28 @@ button.btn:disabled { opacity: .45; cursor: not-allowed; }
     token++;
     clearTimeout(timer);
     if (synth) synth.cancel();
+    if (audio) { audio.pause(); audio.onended = audio.onerror = null; audio = null; }
+    if (endPlay) { endPlay(); endPlay = null; }
     running = false; paused = false;
     els.text.hidden = false; els.reading.hidden = true;
+    els.status.classList.remove("warn");
     setButtons();
     if (!silent) els.status.textContent = "Stopped";
   }
 
-  function finish(msg) {
+  function finish(msg, isError) {
     running = false; paused = false;
     setButtons();
     els.status.textContent = msg;
-    setTimeout(() => { if (!running) { els.text.hidden = false; els.reading.hidden = true; } }, 1200);
+    els.status.classList.toggle("warn", !!isError);
+    setTimeout(() => { if (!running) { els.text.hidden = false; els.reading.hidden = true; } }, isError ? 0 : 1200);
   }
 
   function togglePause() {
     if (!running) return;
-    if (paused) { synth.resume(); paused = false; els.status.textContent = "Reading…"; }
-    else { synth.pause(); paused = true; els.status.textContent = "Paused"; }
+    const dev = engine === "device";
+    if (paused) { dev ? synth.resume() : (audio && !audio.ended && audio.play().catch(() => {})); paused = false; els.status.textContent = "Reading…"; }
+    else { dev ? synth.pause() : audio?.pause(); paused = true; els.status.textContent = "Paused"; }
     setButtons();
   }
 
@@ -342,6 +566,7 @@ button.btn:disabled { opacity: .45; cursor: not-allowed; }
 
   const savedMood = store.get("moodreader.mood");
   setMood(MOODS[savedMood] ? savedMood : "happy");
+  setEngine(store.get("moodreader.engine") || "openai");
   setButtons();
 })();
 </script>
